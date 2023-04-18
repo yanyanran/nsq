@@ -64,9 +64,9 @@ type Channel struct {
 
 	// TODO: these can be DRYd up
 	deferredMessages map[MessageID]*pqueue.Item
-	deferredPQ       pqueue.PriorityQueue
+	deferredPQ       pqueue.PriorityQueue // 优先级延迟队列
 	deferredMutex    sync.Mutex
-	inFlightMessages map[MessageID]*Message
+	inFlightMessages map[MessageID]*Message // 已发送待接收消息map
 	inFlightPQ       inFlightPqueue
 	inFlightMutex    sync.Mutex
 }
@@ -132,7 +132,7 @@ func (c *Channel) initPQ() {
 	c.inFlightMutex.Unlock()
 
 	c.deferredMutex.Lock()
-	c.deferredMessages = make(map[MessageID]*pqueue.Item)
+	c.deferredMessages = make(map[MessageID]*pqueue.Item) // 延迟消息map
 	c.deferredPQ = pqueue.New(pqSize)
 	c.deferredMutex.Unlock()
 }
@@ -302,10 +302,11 @@ func (c *Channel) PutMessage(m *Message) error {
 	return nil
 }
 
+// 重发
 func (c *Channel) put(m *Message) error {
 	select {
-	case c.memoryMsgChan <- m:
-	default:
+	case c.memoryMsgChan <- m: // 放回msgChan
+	default: // 放回磁盘存着
 		err := writeMessageToBackend(m, c.backend)
 		c.nsqd.SetHealth(err)
 		if err != nil {
@@ -547,7 +548,7 @@ func (c *Channel) addToDeferredPQ(item *pqueue.Item) {
 	c.deferredMutex.Unlock()
 }
 
-func (c *Channel) processDeferredQueue(t int64) bool {
+func (c *Channel) processDeferredQueue(t int64) bool { // 延迟队列
 	c.exitMutex.RLock()
 	defer c.exitMutex.RUnlock()
 
@@ -589,24 +590,24 @@ func (c *Channel) processInFlightQueue(t int64) bool {
 	dirty := false
 	for {
 		c.inFlightMutex.Lock()
-		msg, _ := c.inFlightPQ.PeekAndShift(t)
+		msg, _ := c.inFlightPQ.PeekAndShift(t) // 获取inFightQueue中的一条消息
 		c.inFlightMutex.Unlock()
 
 		if msg == nil {
 			goto exit
 		}
-		dirty = true
+		dirty = true // 有未被接收的消息需要处理
 
 		_, err := c.popInFlightMessage(msg.clientID, msg.ID)
 		if err != nil {
 			goto exit
 		}
-		atomic.AddUint64(&c.timeoutCount, 1)
+		atomic.AddUint64(&c.timeoutCount, 1) // timeoutCount++
 		c.RLock()
 		client, ok := c.clients[msg.clientID]
 		c.RUnlock()
 		if ok {
-			client.TimedOutMessage()
+			client.TimedOutMessage() // 客户端自己实现
 		}
 		c.put(msg)
 	}

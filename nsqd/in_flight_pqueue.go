@@ -55,6 +55,7 @@ func (pq *inFlightPqueue) Remove(i int) *Message {
 	return x
 }
 
+// PeekAndShift 查看已发送【inFight】队列 并获取一个队列中的消息
 func (pq *inFlightPqueue) PeekAndShift(max int64) (*Message, int64) {
 	if len(*pq) == 0 {
 		return nil, 0

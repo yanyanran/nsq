@@ -271,8 +271,9 @@ func (n *NSQD) Main() error {
 		})
 	}
 
-	n.waitGroup.Wrap(n.queueScanLoop)
-	n.waitGroup.Wrap(n.lookupLoop)
+	// 开启协程跑
+	n.waitGroup.Wrap(n.queueScanLoop) // 处理incoming消息的到来和消息超时重发
+	n.waitGroup.Wrap(n.lookupLoop)    //
 	if n.getOpts().StatsdAddress != "" {
 		n.waitGroup.Wrap(n.statsdLoop)
 	}
@@ -587,6 +588,7 @@ func (n *NSQD) Notify(v interface{}, persist bool) {
 }
 
 // channels returns a flat slice of all channels in all topics
+// 返回一个channel切片
 func (n *NSQD) channels() []*Channel {
 	var channels []*Channel
 	n.RLock()
@@ -602,6 +604,7 @@ func (n *NSQD) channels() []*Channel {
 }
 
 // resizePool adjusts the size of the pool of queueScanWorker goroutines
+// 调整queueScanWorker协程池的大小
 //
 //	1 <= pool <= min(num * 0.25, QueueScanWorkerPoolMax)
 func (n *NSQD) resizePool(num int, workCh chan *Channel, responseCh chan bool, closeCh chan int) {
@@ -619,7 +622,7 @@ func (n *NSQD) resizePool(num int, workCh chan *Channel, responseCh chan bool, c
 			closeCh <- 1
 			n.poolSize--
 		} else {
-			// expand
+			// expand  > 扩
 			n.waitGroup.Wrap(func() {
 				n.queueScanWorker(workCh, responseCh, closeCh)
 			})
@@ -630,16 +633,17 @@ func (n *NSQD) resizePool(num int, workCh chan *Channel, responseCh chan bool, c
 
 // queueScanWorker receives work (in the form of a channel) from queueScanLoop
 // and processes the deferred and in-flight queues
+// 从 queueScanLoop 接收工作（以channel形式），并处理延迟和正在进行的队列
 func (n *NSQD) queueScanWorker(workCh chan *Channel, responseCh chan bool, closeCh chan int) {
 	for {
 		select {
 		case c := <-workCh:
 			now := time.Now().UnixNano()
 			dirty := false
-			if c.processInFlightQueue(now) {
+			if c.processInFlightQueue(now) { // 已发送未接收
 				dirty = true
 			}
-			if c.processDeferredQueue(now) {
+			if c.processDeferredQueue(now) { // 延迟发送
 				dirty = true
 			}
 			responseCh <- dirty
@@ -664,14 +668,14 @@ func (n *NSQD) queueScanWorker(workCh chan *Channel, responseCh chan bool, close
 // the loop continues without sleep.
 func (n *NSQD) queueScanLoop() {
 	workCh := make(chan *Channel, n.getOpts().QueueScanSelectionCount)
-	responseCh := make(chan bool, n.getOpts().QueueScanSelectionCount)
+	responseCh := make(chan bool, n.getOpts().QueueScanSelectionCount) // 收到dirty-> true/false
 	closeCh := make(chan int)
 
 	workTicker := time.NewTicker(n.getOpts().QueueScanInterval)
 	refreshTicker := time.NewTicker(n.getOpts().QueueScanRefreshInterval)
 
 	channels := n.channels()
-	n.resizePool(len(channels), workCh, responseCh, closeCh)
+	n.resizePool(len(channels), workCh, responseCh, closeCh) // 池
 
 	for {
 		select {
@@ -681,7 +685,7 @@ func (n *NSQD) queueScanLoop() {
 			}
 		case <-refreshTicker.C:
 			channels = n.channels()
-			n.resizePool(len(channels), workCh, responseCh, closeCh)
+			n.resizePool(len(channels), workCh, responseCh, closeCh) // 池II
 			continue
 		case <-n.exitChan:
 			goto exit

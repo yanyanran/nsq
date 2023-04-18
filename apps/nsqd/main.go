@@ -53,7 +53,7 @@ func (p *program) Init(env svc.Environment) error {
 	}
 	cfg.Validate()
 
-	options.Resolve(opts, flagSet, cfg)
+	options.Resolve(opts, flagSet, cfg) // 初始化配置项
 
 	nsqd, err := nsqd.New(opts)
 	if err != nil {
@@ -65,17 +65,17 @@ func (p *program) Init(env svc.Environment) error {
 }
 
 func (p *program) Start() error {
-	err := p.nsqd.LoadMetadata()
+	err := p.nsqd.LoadMetadata() // 加载历史数据
 	if err != nil {
 		logFatal("failed to load metadata - %s", err)
 	}
-	err = p.nsqd.PersistMetadata()
+	err = p.nsqd.PersistMetadata() // 持久化最新数据
 	if err != nil {
 		logFatal("failed to persist metadata - %s", err)
 	}
 
 	go func() {
-		err := p.nsqd.Main()
+		err := p.nsqd.Main() // 开协程进入主Main
 		if err != nil {
 			p.Stop()
 			os.Exit(1)

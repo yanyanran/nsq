@@ -446,7 +446,7 @@ func (c *clientV2) PublishedMessage(topic string, count uint64) {
 	c.metaLock.Unlock()
 }
 
-func (c *clientV2) TimedOutMessage() {
+func (c *clientV2) TimedOutMessage() { // 实现接口函数
 	atomic.AddInt64(&c.InFlightCount, -1)
 	c.tryUpdateReadyState()
 }

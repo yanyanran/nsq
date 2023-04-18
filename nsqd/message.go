@@ -15,16 +15,16 @@ const (
 type MessageID [MsgIDLength]byte
 
 type Message struct {
-	ID        MessageID
+	ID        MessageID // 唯一id
 	Body      []byte
-	Timestamp int64
-	Attempts  uint16
+	Timestamp int64  // 时间戳 8byte
+	Attempts  uint16 // 重发次数 2byte
 
 	// for in-flight handling
-	deliveryTS time.Time
+	deliveryTS time.Time // 入inFightQueue时长
 	clientID   int64
-	pri        int64
-	index      int
+	pri        int64 // 优先级
+	index      int   // 优先级下标
 	deferred   time.Duration
 }
 
@@ -36,10 +36,12 @@ func NewMessage(id MessageID, body []byte) *Message {
 	}
 }
 
+// WriteTo 写msg的ID、Body、Timestamp、Attempts
 func (m *Message) WriteTo(w io.Writer) (int64, error) {
 	var buf [10]byte
 	var total int64
-
+	//binary.Write(w,binary.BigEndian,m.Timestamp) -> 第三个参数的data大小需要是固定大小
+	// 这样写是为了减少Write内部判断 减少耗时
 	binary.BigEndian.PutUint64(buf[:8], uint64(m.Timestamp))
 	binary.BigEndian.PutUint16(buf[8:10], uint16(m.Attempts))
 
@@ -74,7 +76,7 @@ func (m *Message) WriteTo(w io.Writer) (int64, error) {
 //	                       (uint16)
 //	                        2-byte
 //	                       attempts
-func decodeMessage(b []byte) (*Message, error) {
+func decodeMessage(b []byte) (*Message, error) { // 解码消息
 	var msg Message
 
 	if len(b) < minValidMsgLength {
