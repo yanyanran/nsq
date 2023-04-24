@@ -23,7 +23,7 @@ type tcpServer struct {
 	conns sync.Map
 }
 
-func (p *tcpServer) Handle(conn net.Conn) {
+func (p *tcpServer) Handle(conn net.Conn) { // 实现了接口方法Handle
 	p.nsqd.logf(LOG_INFO, "TCP: new client(%s)", conn.RemoteAddr())
 
 	// The client should initialize itself by sending a 4 byte sequence indicating
@@ -42,9 +42,9 @@ func (p *tcpServer) Handle(conn net.Conn) {
 		conn.RemoteAddr(), protocolMagic)
 
 	var prot protocol.Protocol
-	switch protocolMagic {
+	switch protocolMagic { // 新建的连接需要指定协议的版本来完成初始化
 	case "  V2":
-		prot = &protocolV2{nsqd: p.nsqd}
+		prot = &protocolV2{nsqd: p.nsqd} // 生成一个protocolV2对象
 	default:
 		protocol.SendFramedResponse(conn, frameTypeError, []byte("E_BAD_PROTOCOL"))
 		conn.Close()
@@ -53,9 +53,10 @@ func (p *tcpServer) Handle(conn net.Conn) {
 		return
 	}
 
-	client := prot.NewClient(conn)
+	client := prot.NewClient(conn) // 生成连接对象
 	p.conns.Store(conn.RemoteAddr(), client)
 
+	// 每个连接对应一个protocol对象
 	err = prot.IOLoop(client)
 	if err != nil {
 		p.nsqd.logf(LOG_ERROR, "client(%s) - %s", conn.RemoteAddr(), err)

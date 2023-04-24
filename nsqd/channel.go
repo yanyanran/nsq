@@ -53,7 +53,7 @@ type Channel struct {
 	exitMutex     sync.RWMutex
 
 	// state tracking
-	clients        map[int64]Consumer
+	clients        map[int64]Consumer // 存储了clientID和Consumer之间的映射
 	paused         int32
 	ephemeral      bool
 	deleteCallback func(*Channel)

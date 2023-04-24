@@ -7,6 +7,13 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/nsqio/nsq/internal/clusterinfo"
+	"github.com/nsqio/nsq/internal/dirlock"
+	"github.com/nsqio/nsq/internal/http_api"
+	"github.com/nsqio/nsq/internal/protocol"
+	"github.com/nsqio/nsq/internal/statsd"
+	"github.com/nsqio/nsq/internal/util"
+	"github.com/nsqio/nsq/internal/version"
 	"log"
 	"math/rand"
 	"net"
@@ -16,14 +23,6 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
-
-	"github.com/nsqio/nsq/internal/clusterinfo"
-	"github.com/nsqio/nsq/internal/dirlock"
-	"github.com/nsqio/nsq/internal/http_api"
-	"github.com/nsqio/nsq/internal/protocol"
-	"github.com/nsqio/nsq/internal/statsd"
-	"github.com/nsqio/nsq/internal/util"
-	"github.com/nsqio/nsq/internal/version"
 )
 
 const (
@@ -68,7 +67,7 @@ type NSQD struct {
 	notifyChan           chan interface{}
 	optsNotificationChan chan struct{}
 	exitChan             chan int
-	waitGroup            util.WaitGroupWrapper
+	waitGroup            util.WaitGroupWrapper // 阻塞主线程 直到所有协程执行完成
 
 	ci *clusterinfo.ClusterInfo
 }
@@ -272,10 +271,10 @@ func (n *NSQD) Main() error {
 	}
 
 	// 开启协程跑
-	n.waitGroup.Wrap(n.queueScanLoop) // 处理incoming消息的到来和消息超时重发
-	n.waitGroup.Wrap(n.lookupLoop)    //
+	n.waitGroup.Wrap(n.queueScanLoop) // 处理incoming消息的到来和消息超时重发【队列监控】
+	n.waitGroup.Wrap(n.lookupLoop)    // 节点信息管理【发现服务】
 	if n.getOpts().StatsdAddress != "" {
-		n.waitGroup.Wrap(n.statsdLoop)
+		n.waitGroup.Wrap(n.statsdLoop) // 统计信息
 	}
 
 	err := <-exitCh
@@ -302,7 +301,7 @@ type ChannelMetadata struct {
 }
 
 func newMetadataFile(opts *Options) string {
-	return path.Join(opts.DataPath, "nsqd.dat")
+	return path.Join(opts.DataPath, "nsqd.dat") // 存放元数据的文件
 }
 
 func readOrEmpty(fn string) ([]byte, error) {
@@ -344,7 +343,7 @@ func (n *NSQD) LoadMetadata() error {
 	}
 
 	var m Metadata
-	err = json.Unmarshal(data, &m)
+	err = json.Unmarshal(data, &m) // 解析元数据
 	if err != nil {
 		return fmt.Errorf("failed to parse metadata in %s - %s", fn, err)
 	}
@@ -404,6 +403,7 @@ func (n *NSQD) GetMetadata(ephemeral bool) *Metadata {
 	return meta
 }
 
+// PersistMetadata 持久化元数据
 func (n *NSQD) PersistMetadata() error {
 	// persist metadata about what topics/channels we have, across restarts
 	fileName := newMetadataFile(n.getOpts())
@@ -416,11 +416,12 @@ func (n *NSQD) PersistMetadata() error {
 	}
 	tmpFileName := fmt.Sprintf("%s.%d.tmp", fileName, rand.Int())
 
-	err = writeSyncFile(tmpFileName, data)
+	// 重新生成一份新的元数据覆盖原来的文件
+	err = writeSyncFile(tmpFileName, data) // 【安全性】不直接修改，先写入一个tmpFile
 	if err != nil {
 		return err
 	}
-	err = os.Rename(tmpFileName, fileName)
+	err = os.Rename(tmpFileName, fileName) // 重命名
 	if err != nil {
 		return err
 	}
@@ -463,7 +464,7 @@ func (n *NSQD) Exit() {
 
 	n.logf(LOG_INFO, "NSQ: stopping subsystems")
 	close(n.exitChan)
-	n.waitGroup.Wait()
+	n.waitGroup.Wait() // 阻塞等待子协程完成后退出
 	n.dl.Unlock()
 	n.logf(LOG_INFO, "NSQ: bye")
 	n.ctxCancel()
@@ -473,7 +474,7 @@ func (n *NSQD) Exit() {
 // to return a pointer to a Topic object (potentially new)
 func (n *NSQD) GetTopic(topicName string) *Topic {
 	// most likely we already have this topic, so try read lock first
-	n.RLock()
+	n.RLock() // 读锁读（此时如果有写锁-> 阻塞）
 	t, ok := n.topicMap[topicName]
 	n.RUnlock()
 	if ok {
@@ -500,7 +501,7 @@ func (n *NSQD) GetTopic(topicName string) *Topic {
 
 	// if this topic was created while loading metadata at startup don't do any further initialization
 	// (topic will be "started" after loading completes)
-	if atomic.LoadInt32(&n.isLoading) == 1 {
+	if atomic.LoadInt32(&n.isLoading) == 1 { // atomic.Value 进行结构体字段的并发存取值，保证原子性
 		return t
 	}
 
@@ -604,10 +605,12 @@ func (n *NSQD) channels() []*Channel {
 }
 
 // resizePool adjusts the size of the pool of queueScanWorker goroutines
-// 调整queueScanWorker协程池的大小
+// 调整worker数量
 //
 //	1 <= pool <= min(num * 0.25, QueueScanWorkerPoolMax)
 func (n *NSQD) resizePool(num int, workCh chan *Channel, responseCh chan bool, closeCh chan int) {
+	// 理想状态下的worker数量为channel总量的25%。
+	// worker数量满足1 <= pool <= min(num * 0.25, QueueScanWorkerPoolMax)
 	idealPoolSize := int(float64(num) * 0.25)
 	if idealPoolSize < 1 {
 		idealPoolSize = 1
@@ -615,13 +618,17 @@ func (n *NSQD) resizePool(num int, workCh chan *Channel, responseCh chan bool, c
 		idealPoolSize = n.getOpts().QueueScanWorkerPoolMax
 	}
 	for {
+		// 当前worker数量符合要求
 		if idealPoolSize == n.poolSize {
 			break
 		} else if idealPoolSize < n.poolSize {
+			// 当前worker数量过多，需要关闭一个worker
+			// 往closeCh管道中发送一个消息，监听到这个消息的worker将退出
 			// contract
 			closeCh <- 1
 			n.poolSize--
 		} else {
+			// 当前worker数量过少，需要增加一个worker
 			// expand  > 扩
 			n.waitGroup.Wrap(func() {
 				n.queueScanWorker(workCh, responseCh, closeCh)
@@ -633,19 +640,25 @@ func (n *NSQD) resizePool(num int, workCh chan *Channel, responseCh chan bool, c
 
 // queueScanWorker receives work (in the form of a channel) from queueScanLoop
 // and processes the deferred and in-flight queues
-// 从 queueScanLoop 接收工作（以channel形式），并处理延迟和正在进行的队列
-func (n *NSQD) queueScanWorker(workCh chan *Channel, responseCh chan bool, closeCh chan int) {
+// 从queueScanLoop接收工作（以channel形式），并处理延迟和正在进行的队列
+func (n *NSQD) queueScanWorker(workCh chan *Channel, responseCh chan bool, closeCh chan int) { // goroutine
 	for {
 		select {
+		// 获取到在queueScanLoop中随机选择的一个channel
 		case c := <-workCh:
 			now := time.Now().UnixNano()
 			dirty := false
+			// 扫描inFlight队列，将已过期消息移除，
+			// 并且重新添加到channel中，等待重新推送到客户端
 			if c.processInFlightQueue(now) { // 已发送未接收
 				dirty = true
 			}
+			// 扫描Deferred队列，将已到期消息移除，
+			// 并且重新添加到channel中，等待重新推送到客户端
 			if c.processDeferredQueue(now) { // 延迟发送
 				dirty = true
 			}
+			// 通知queueScanLoop该channel存在需要处理的消息
 			responseCh <- dirty
 		case <-closeCh:
 			return
@@ -675,17 +688,20 @@ func (n *NSQD) queueScanLoop() {
 	refreshTicker := time.NewTicker(n.getOpts().QueueScanRefreshInterval)
 
 	channels := n.channels()
-	n.resizePool(len(channels), workCh, responseCh, closeCh) // 池
+	// 进for循环之前，先调整一次worker数量
+	n.resizePool(len(channels), workCh, responseCh, closeCh) // 调整池1
 
 	for {
 		select {
+		// 每隔QueueScanInterval秒，随机选择QueueScanSelectionCount个channel进行处理
 		case <-workTicker.C:
 			if len(channels) == 0 {
 				continue
 			}
+		// 每隔QueueScanRefreshInterval秒重新调整一次worker数量
 		case <-refreshTicker.C:
 			channels = n.channels()
-			n.resizePool(len(channels), workCh, responseCh, closeCh) // 池II
+			n.resizePool(len(channels), workCh, responseCh, closeCh) // 调整池2
 			continue
 		case <-n.exitChan:
 			goto exit
@@ -697,6 +713,7 @@ func (n *NSQD) queueScanLoop() {
 		}
 
 	loop:
+		// 从所有channel中随机选择QueueScanSelectionCount个进行处理
 		for _, i := range util.UniqRands(num, len(channels)) {
 			workCh <- channels[i]
 		}
@@ -704,10 +721,12 @@ func (n *NSQD) queueScanLoop() {
 		numDirty := 0
 		for i := 0; i < num; i++ {
 			if <-responseCh {
+				// 如果某个channel的inFlight或者Deferred队列存在超时或者到期的消息，则标记一次
 				numDirty++
 			}
 		}
 
+		// 如果超过QueueScanDirtyPercent的channel被标记为dirty， 则继续选择QueueScanSelectionCount个channel重复上述步骤
 		if float64(numDirty)/float64(num) > n.getOpts().QueueScanDirtyPercent {
 			goto loop
 		}

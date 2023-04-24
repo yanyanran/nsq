@@ -10,7 +10,7 @@ import (
 	"github.com/nsqio/nsq/internal/lg"
 )
 
-type TCPHandler interface {
+type TCPHandler interface { // 任何实现了【Handle方法】的类都可以作为TCPServer的第二个参
 	Handle(net.Conn)
 }
 
@@ -29,7 +29,7 @@ func TCPServer(listener net.Listener, handler TCPHandler, logf lg.AppLogFunc) er
 				runtime.Gosched()
 				continue
 			}
-			// theres no direct way to detect this error because it is not exposed
+			// there's no direct way to detect this error because it is not exposed
 			if !strings.Contains(err.Error(), "use of closed network connection") {
 				return fmt.Errorf("listener.Accept() error - %s", err)
 			}

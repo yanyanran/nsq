@@ -36,6 +36,7 @@ func (p *protocolV2) NewClient(conn net.Conn) protocol.Client {
 	return newClientV2(clientID, conn, p.nsqd)
 }
 
+// IOLoop 对tcp连接进行处理
 func (p *protocolV2) IOLoop(c protocol.Client) error {
 	var err error
 	var line []byte
@@ -49,7 +50,7 @@ func (p *protocolV2) IOLoop(c protocol.Client) error {
 	// and avoid a potential race with IDENTIFY (where a client
 	// could have changed or disabled said attributes)
 	messagePumpStartedChan := make(chan bool)
-	go p.messagePump(client, messagePumpStartedChan)
+	go p.messagePump(client, messagePumpStartedChan) // pump
 	<-messagePumpStartedChan
 
 	for {
@@ -82,7 +83,7 @@ func (p *protocolV2) IOLoop(c protocol.Client) error {
 		p.nsqd.logf(LOG_DEBUG, "PROTOCOL(V2): [%s] %s", client, params)
 
 		var response []byte
-		response, err = p.Exec(client, params)
+		response, err = p.Exec(client, params) // Execute分配指令对应方法
 		if err != nil {
 			ctx := ""
 			if parentErr := err.(protocol.ChildErr).Parent(); parentErr != nil {
@@ -176,25 +177,25 @@ func (p *protocolV2) Exec(client *clientV2, params [][]byte) ([]byte, error) {
 	switch {
 	case bytes.Equal(params[0], []byte("FIN")):
 		return p.FIN(client, params)
-	case bytes.Equal(params[0], []byte("RDY")):
+	case bytes.Equal(params[0], []byte("RDY")): // client连接就绪
 		return p.RDY(client, params)
-	case bytes.Equal(params[0], []byte("REQ")):
+	case bytes.Equal(params[0], []byte("REQ")): // 消息重新入队
 		return p.REQ(client, params)
-	case bytes.Equal(params[0], []byte("PUB")):
+	case bytes.Equal(params[0], []byte("PUB")): // 发布一条消息
 		return p.PUB(client, params)
-	case bytes.Equal(params[0], []byte("MPUB")):
+	case bytes.Equal(params[0], []byte("MPUB")): // 发布多条消息
 		return p.MPUB(client, params)
-	case bytes.Equal(params[0], []byte("DPUB")):
+	case bytes.Equal(params[0], []byte("DPUB")): // 发布一条延时消息
 		return p.DPUB(client, params)
-	case bytes.Equal(params[0], []byte("NOP")):
+	case bytes.Equal(params[0], []byte("NOP")): // 空操作
 		return p.NOP(client, params)
-	case bytes.Equal(params[0], []byte("TOUCH")):
+	case bytes.Equal(params[0], []byte("TOUCH")): // 重置消息过期时间
 		return p.TOUCH(client, params)
-	case bytes.Equal(params[0], []byte("SUB")):
+	case bytes.Equal(params[0], []byte("SUB")): // 消费者订阅Topic/Channel
 		return p.SUB(client, params)
-	case bytes.Equal(params[0], []byte("CLS")):
+	case bytes.Equal(params[0], []byte("CLS")): // 超时关闭连接CLOSE——WAIT
 		return p.CLS(client, params)
-	case bytes.Equal(params[0], []byte("AUTH")):
+	case bytes.Equal(params[0], []byte("AUTH")): // 权限认证
 		return p.AUTH(client, params)
 	}
 	return nil, protocol.NewFatalClientErr(nil, "E_INVALID", fmt.Sprintf("invalid command %s", params[0]))

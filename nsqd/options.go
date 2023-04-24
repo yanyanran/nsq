@@ -101,8 +101,9 @@ func NewOptions() *Options {
 		LogPrefix: "[nsqd] ",
 		LogLevel:  lg.INFO,
 
-		TCPAddress:        "0.0.0.0:4150",
-		HTTPAddress:       "0.0.0.0:4151",
+		// 默认配置
+		TCPAddress:        "0.0.0.0:4150", // 为客户端提供TCP服务
+		HTTPAddress:       "0.0.0.0:4151", // 提供HTTP API服务 7
 		HTTPSAddress:      "0.0.0.0:4152",
 		BroadcastAddress:  hostname,
 		BroadcastTCPPort:  0,

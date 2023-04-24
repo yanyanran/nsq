@@ -25,7 +25,8 @@ type program struct {
 
 func main() {
 	prg := &program{}
-	if err := svc.Run(prg, syscall.SIGINT, syscall.SIGTERM); err != nil {
+	// 使用svc包启动守护进程
+	if err := svc.Run(prg, syscall.SIGINT, syscall.SIGTERM); err != nil { //【定义一个Service（prg）,实现其 svc.Service中的接口即可】
 		logFatal("%s", err)
 	}
 }
@@ -64,6 +65,7 @@ func (p *program) Init(env svc.Environment) error {
 	return nil
 }
 
+// Start 不能直接阻塞，需在Start方法中新开goroutine去写需要阻塞的代码
 func (p *program) Start() error {
 	err := p.nsqd.LoadMetadata() // 加载历史数据
 	if err != nil {

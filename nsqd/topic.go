@@ -21,7 +21,7 @@ type Topic struct {
 	sync.RWMutex
 
 	name              string
-	channelMap        map[string]*Channel
+	channelMap        map[string]*Channel // 存储了channel名称和Channel实例的映射关系
 	backend           BackendQueue
 	memoryMsgChan     chan *Message
 	startChan         chan int

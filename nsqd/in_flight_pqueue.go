@@ -62,8 +62,8 @@ func (pq *inFlightPqueue) PeekAndShift(max int64) (*Message, int64) {
 	}
 
 	x := (*pq)[0]
-	if x.pri > max {
-		return nil, x.pri - max
+	if x.pri > max { // 判断消息是否超时
+		return nil, x.pri - max // pri【超时时间】=> time.Now().Add(timeoutTime).UnixNano()
 	}
 	pq.Pop()
 
@@ -81,9 +81,10 @@ func (pq *inFlightPqueue) up(j int) {
 	}
 }
 
+// 下浮
 func (pq *inFlightPqueue) down(i, n int) {
 	for {
-		j1 := 2*i + 1
+		j1 := 2*i + 1          // 左孩子
 		if j1 >= n || j1 < 0 { // j1 < 0 after int overflow
 			break
 		}

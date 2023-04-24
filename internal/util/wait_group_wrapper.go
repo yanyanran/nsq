@@ -9,9 +9,9 @@ type WaitGroupWrapper struct {
 }
 
 func (w *WaitGroupWrapper) Wrap(cb func()) {
-	w.Add(1)
+	w.Add(1) // sync.WaitGroup.Add
 	go func() {
 		cb()
-		w.Done()
+		w.Done() // sync.WaitGroup.Done
 	}()
 }

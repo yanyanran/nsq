@@ -39,10 +39,11 @@ type httpServer struct {
 	router      http.Handler
 }
 
+// Decorate 装饰器模式（？）
 func newHTTPServer(nsqd *NSQD, tlsEnabled bool, tlsRequired bool) *httpServer {
 	log := http_api.Log(nsqd.logf)
 
-	router := httprouter.New()
+	router := httprouter.New() // http-Decorate路由分发
 	router.HandleMethodNotAllowed = true
 	router.PanicHandler = http_api.LogPanicHandler(nsqd.logf)
 	router.NotFound = http_api.LogNotFoundHandler(nsqd.logf)
