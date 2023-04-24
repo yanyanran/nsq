@@ -177,16 +177,22 @@ func (t *Topic) DeleteExistingChannel(channelName string) error {
 }
 
 // PutMessage writes a Message to the queue
+// 往topic中投递消息
 func (t *Topic) PutMessage(m *Message) error {
 	t.RLock()
 	defer t.RUnlock()
+	// 判断此topic是否正处于关闭或者删除状态
+	// 此状态可能维持的时间比较长，因为如果是关闭topic的话
+	// nsqd需要将topic还在内存中的消息持久化到磁盘
 	if atomic.LoadInt32(&t.exitFlag) == 1 {
 		return errors.New("exiting")
 	}
+	// 消息放入topic
 	err := t.put(m)
 	if err != nil {
 		return err
 	}
+	// 增加topic中消息的个数，原子操作
 	atomic.AddUint64(&t.messageCount, 1)
 	atomic.AddUint64(&t.messageBytes, uint64(len(m.Body)))
 	return nil
@@ -217,14 +223,18 @@ func (t *Topic) PutMessages(msgs []*Message) error {
 	return nil
 }
 
+// topic存放消息
 func (t *Topic) put(m *Message) error {
 	// If mem-queue-size == 0, avoid memory chan, for more consistent ordering,
 	// but try to use memory chan for deferred messages (they lose deferred timer
 	// in backend queue) or if topic is ephemeral (there is no backend queue).
 	if cap(t.memoryMsgChan) > 0 || t.ephemeral || m.deferred != 0 {
 		select {
+		// 将消息存入topic的内存队列
 		case t.memoryMsgChan <- m:
 			return nil
+		// 如果内存队列已满，则写入磁盘队列
+		// nsq内部实现了一个基于文件的FIFO队列
 		default:
 			break // write to backend
 		}
@@ -488,6 +498,7 @@ func (t *Topic) IsPaused() bool {
 	return atomic.LoadInt32(&t.paused) == 1
 }
 
+// GenerateID 加这一层是为了处理这1ms下产生的id已经到达最大限度的情况（等下1ms）
 func (t *Topic) GenerateID() MessageID {
 	var i int64 = 0
 	for {

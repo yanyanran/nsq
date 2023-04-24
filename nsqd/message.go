@@ -23,9 +23,9 @@ type Message struct {
 	// for in-flight handling
 	deliveryTS time.Time // 入inFightQueue时长
 	clientID   int64
-	pri        int64 // 优先级
-	index      int   // 优先级下标
-	deferred   time.Duration
+	pri        int64         // 优先级
+	index      int           // 优先级下标
+	deferred   time.Duration // 延迟发送时间
 }
 
 func NewMessage(id MessageID, body []byte) *Message {

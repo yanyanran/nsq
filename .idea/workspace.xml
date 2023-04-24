@@ -5,17 +5,11 @@
   </component>
   <component name="ChangeListManager">
     <list default="true" id="cbcc74e5-dcbb-4d78-bc0d-f5c3eab85a7f" name="变更" comment="">
-      <change afterPath="$PROJECT_DIR$/go.work" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/.idea/vcs.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/vcs.xml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/apps/nsqd/main.go" beforeDir="false" afterPath="$PROJECT_DIR$/apps/nsqd/main.go" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/internal/protocol/tcp_server.go" beforeDir="false" afterPath="$PROJECT_DIR$/internal/protocol/tcp_server.go" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/internal/util/wait_group_wrapper.go" beforeDir="false" afterPath="$PROJECT_DIR$/internal/util/wait_group_wrapper.go" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/nsqd/channel.go" beforeDir="false" afterPath="$PROJECT_DIR$/nsqd/channel.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/nsqd/guid.go" beforeDir="false" afterPath="$PROJECT_DIR$/nsqd/guid.go" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/nsqd/http.go" beforeDir="false" afterPath="$PROJECT_DIR$/nsqd/http.go" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/nsqd/in_flight_pqueue.go" beforeDir="false" afterPath="$PROJECT_DIR$/nsqd/in_flight_pqueue.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/nsqd/message.go" beforeDir="false" afterPath="$PROJECT_DIR$/nsqd/message.go" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/nsqd/nsqd.go" beforeDir="false" afterPath="$PROJECT_DIR$/nsqd/nsqd.go" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/nsqd/options.go" beforeDir="false" afterPath="$PROJECT_DIR$/nsqd/options.go" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/nsqd/protocol_v2.go" beforeDir="false" afterPath="$PROJECT_DIR$/nsqd/protocol_v2.go" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/nsqd/tcp.go" beforeDir="false" afterPath="$PROJECT_DIR$/nsqd/tcp.go" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/nsqd/topic.go" beforeDir="false" afterPath="$PROJECT_DIR$/nsqd/topic.go" afterDir="false" />
@@ -55,7 +49,7 @@
     "WebServerToolWindowFactoryState": "false",
     "go.import.settings.migrated": "true",
     "go.sdk.automatically.set": "true",
-    "last_opened_file_path": "/home/yanran/github/Y-MQ初版",
+    "last_opened_file_path": "/home/yanran/github/Y-MQ",
     "nodejs_package_manager_path": "npm",
     "settings.editor.selected.configurable": "fileTemplates"
   }

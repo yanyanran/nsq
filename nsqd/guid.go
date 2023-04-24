@@ -48,7 +48,7 @@ func NewGUIDFactory(nodeID int64) *guidFactory {
 	}
 }
 
-func (f *guidFactory) NewGUID() (guid, error) {
+func (f *guidFactory) NewGUID() (guid, error) { // topic中GenerateID()
 	f.Lock()
 
 	// divide by 1048576, giving pseudo-milliseconds

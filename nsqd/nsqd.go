@@ -472,28 +472,41 @@ func (n *NSQD) Exit() {
 
 // GetTopic performs a thread safe operation
 // to return a pointer to a Topic object (potentially new)
-func (n *NSQD) GetTopic(topicName string) *Topic {
+func (n *NSQD) GetTopic(topicName string) *Topic { // 线程安全的
 	// most likely we already have this topic, so try read lock first
-	n.RLock() // 读锁读（此时如果有写锁-> 阻塞）
+	// 读锁（此时如果有写锁-> 阻塞），不限制读但限制写
+	n.RLock()
+	// 从nsqd的topicMap中获取topic实例，如果存在直接返回
 	t, ok := n.topicMap[topicName]
 	n.RUnlock()
 	if ok {
 		return t
 	}
 
+	// 不存在此topic实例，这里加个写锁，保证后面的创建操作是线程安全的
 	n.Lock()
 
+	// 再次从topicMap中获取一次。为什么？
+	// 考虑一种情况：在某一时刻，同时有线程A B C获取同一个topic D
+	// 此时A B C通过n.topicMap[D]没拿到实例，全部走到n.Lock()，
+	// A先拿到锁成功创建了D的实例并且添加入topicMap中，然后释放锁返回。
+	// B, C中某一个获取到A释放的锁进入临界区，
+	// 如果没有再从topicMap中获取一次，则会重新创建一个topic实例，
+	// 可能会造成数据丢失
 	t, ok = n.topicMap[topicName]
 	if ok {
+		// 如果此时获取到topic实例，说明几乎在同一时刻有另外一个线程也在获取该topic
 		n.Unlock()
 		return t
 	}
 	deleteCallback := func(t *Topic) {
 		n.DeleteExistingTopic(t.name)
 	}
+	// 第二次没有从topicMap中获取到，则新建topic实例，并添加到topicMap中
 	t = NewTopic(topicName, n, deleteCallback)
 	n.topicMap[topicName] = t
 
+	// 到这里已经完成了topic实例的新建工作，但msgPump还没启动
 	n.Unlock()
 
 	n.logf(LOG_INFO, "TOPIC(%s): created", t.name)
@@ -507,6 +520,7 @@ func (n *NSQD) GetTopic(topicName string) *Topic {
 
 	// if using lookupd, make a blocking call to get channels and immediately create them
 	// to ensure that all channels receive published messages
+	// 从远端获取channel
 	lookupdHTTPAddrs := n.lookupdHTTPAddrs()
 	if len(lookupdHTTPAddrs) > 0 {
 		channelNames, err := n.ci.GetLookupdTopicChannels(t.name, lookupdHTTPAddrs)

@@ -40,6 +40,7 @@ type httpServer struct {
 }
 
 // Decorate 装饰器模式（？）
+// 配置http服务的路由和handler
 func newHTTPServer(nsqd *NSQD, tlsEnabled bool, tlsRequired bool) *httpServer {
 	log := http_api.Log(nsqd.logf)
 
@@ -55,6 +56,7 @@ func newHTTPServer(nsqd *NSQD, tlsEnabled bool, tlsRequired bool) *httpServer {
 		router:      router,
 	}
 
+	// 配置路由以及handler
 	router.Handle("GET", "/ping", http_api.Decorate(s.pingHandler, log, http_api.PlainText))
 	router.Handle("GET", "/info", http_api.Decorate(s.doInfo, log, http_api.V1))
 
@@ -187,8 +189,9 @@ func (s *httpServer) getExistingTopicFromQuery(req *http.Request) (*http_api.Req
 	return reqParams, topic, channelName, err
 }
 
+// 解析url获取topic name
 func (s *httpServer) getTopicFromQuery(req *http.Request) (url.Values, *Topic, error) {
-	reqParams, err := url.ParseQuery(req.URL.RawQuery)
+	reqParams, err := url.ParseQuery(req.URL.RawQuery) // 返回一个map-> K：string V：[]string
 	if err != nil {
 		s.nsqd.logf(LOG_ERROR, "failed to parse request params - %s", err)
 		return nil, nil, http_api.Err{400, "INVALID_REQUEST"}
@@ -207,6 +210,7 @@ func (s *httpServer) getTopicFromQuery(req *http.Request) (url.Values, *Topic, e
 	return reqParams, s.nsqd.GetTopic(topicName), nil
 }
 
+// http接收消息的Handler
 func (s *httpServer) doPUB(w http.ResponseWriter, req *http.Request, ps httprouter.Params) (interface{}, error) {
 	// TODO: one day I'd really like to just error on chunked requests
 	// to be able to fail "too big" requests before we even read
@@ -218,6 +222,7 @@ func (s *httpServer) doPUB(w http.ResponseWriter, req *http.Request, ps httprout
 	// add 1 so that it's greater than our max when we test for it
 	// (LimitReader returns a "fake" EOF)
 	readMax := s.nsqd.getOpts().MaxMsgSize + 1
+	// 从请求中获取【消息体】
 	body, err := io.ReadAll(io.LimitReader(req.Body, readMax))
 	if err != nil {
 		return nil, http_api.Err{500, "INTERNAL_ERROR"}
@@ -229,12 +234,14 @@ func (s *httpServer) doPUB(w http.ResponseWriter, req *http.Request, ps httprout
 		return nil, http_api.Err{400, "MSG_EMPTY"}
 	}
 
+	// 从请求中获取【topic name】，然后根据topic name从nsqd实例中获取topic实例（没有此topic就新建一个
 	reqParams, topic, err := s.getTopicFromQuery(req)
 	if err != nil {
 		return nil, err
 	}
 
 	var deferred time.Duration
+	// 请求中可以带上defer参数，表示消息可以延迟多长时间再投递出去
 	if ds, ok := reqParams["defer"]; ok {
 		var di int64
 		di, err = strconv.ParseInt(ds[0], 10, 64)
@@ -247,8 +254,10 @@ func (s *httpServer) doPUB(w http.ResponseWriter, req *http.Request, ps httprout
 		}
 	}
 
+	// 生成一个唯一id构建Message对象
 	msg := NewMessage(topic.GenerateID(), body)
 	msg.deferred = deferred
+	// 将消息加入topic中
 	err = topic.PutMessage(msg)
 	if err != nil {
 		return nil, http_api.Err{503, "EXITING"}

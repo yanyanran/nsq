@@ -56,7 +56,7 @@ func (p *tcpServer) Handle(conn net.Conn) { // 实现了接口方法Handle
 	client := prot.NewClient(conn) // 生成连接对象
 	p.conns.Store(conn.RemoteAddr(), client)
 
-	// 每个连接对应一个protocol对象
+	// 连接建立，在IOLoop中通信
 	err = prot.IOLoop(client)
 	if err != nil {
 		p.nsqd.logf(LOG_ERROR, "client(%s) - %s", conn.RemoteAddr(), err)

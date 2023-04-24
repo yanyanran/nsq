@@ -50,7 +50,12 @@ func (p *protocolV2) IOLoop(c protocol.Client) error {
 	// and avoid a potential race with IDENTIFY (where a client
 	// could have changed or disabled said attributes)
 	messagePumpStartedChan := make(chan bool)
+	// 为每个连接启动一个goroutine，通过chan进行消息通信
+	// 完成消息接收，消息投递，订阅channel，发送心跳包等工作
 	go p.messagePump(client, messagePumpStartedChan) // pump
+	// messagePumpStartedChan作为messagePump的参数
+	// 用来阻塞当前进程，直到messagePump完成初始化工作，
+	// 关闭messagePumpStartedChan后，当前进程才能继续
 	<-messagePumpStartedChan
 
 	for {
@@ -62,6 +67,8 @@ func (p *protocolV2) IOLoop(c protocol.Client) error {
 
 		// ReadSlice does not allocate new space for the data each request
 		// ie. the returned slice is only valid until the next call to it
+		// 读取直到第一次遇到'\n'，
+		// 返回缓冲里的包含已读取的数据和'\n'字节的切片
 		line, err = client.Reader.ReadSlice('\n')
 		if err != nil {
 			if err == io.EOF {
@@ -78,11 +85,13 @@ func (p *protocolV2) IOLoop(c protocol.Client) error {
 		if len(line) > 0 && line[len(line)-1] == '\r' {
 			line = line[:len(line)-1]
 		}
+		// 从数据中解析出命令
 		params := bytes.Split(line, separatorBytes)
 
 		p.nsqd.logf(LOG_DEBUG, "PROTOCOL(V2): [%s] %s", client, params)
 
 		var response []byte
+		// 执行命令
 		response, err = p.Exec(client, params) // Execute分配指令对应方法
 		if err != nil {
 			ctx := ""
@@ -166,6 +175,7 @@ func (p *protocolV2) Send(client *clientV2, frameType int32, data []byte) error 
 	return err
 }
 
+// Exec tcp命令执行
 func (p *protocolV2) Exec(client *clientV2, params [][]byte) ([]byte, error) {
 	if bytes.Equal(params[0], []byte("IDENTIFY")) {
 		return p.IDENTIFY(client, params)
@@ -770,6 +780,7 @@ func (p *protocolV2) PUB(client *clientV2, params [][]byte) ([]byte, error) {
 		return nil, protocol.NewFatalClientErr(nil, "E_INVALID", "PUB insufficient number of parameters")
 	}
 
+	// 从TCP参数中解析出topic name
 	topicName := string(params[1])
 	if !protocol.IsValidTopicName(topicName) {
 		return nil, protocol.NewFatalClientErr(nil, "E_BAD_TOPIC",
@@ -801,6 +812,7 @@ func (p *protocolV2) PUB(client *clientV2, params [][]byte) ([]byte, error) {
 		return nil, err
 	}
 
+	// 与http接收消息一样，获取topic实例之后，存入一条消息
 	topic := p.nsqd.GetTopic(topicName)
 	msg := NewMessage(topic.GenerateID(), messageBody)
 	err = topic.PutMessage(msg)
