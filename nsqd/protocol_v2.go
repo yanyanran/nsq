@@ -211,6 +211,7 @@ func (p *protocolV2) Exec(client *clientV2, params [][]byte) ([]byte, error) {
 	return nil, protocol.NewFatalClientErr(nil, "E_INVALID", fmt.Sprintf("invalid command %s", params[0]))
 }
 
+// 内部监听多个事件
 func (p *protocolV2) messagePump(client *clientV2, startedChan chan bool) {
 	var err error
 	var memoryMsgChan chan *Message
@@ -239,37 +240,43 @@ func (p *protocolV2) messagePump(client *clientV2, startedChan chan bool) {
 
 	// signal to the goroutine that started the messagePump
 	// that we've started up
+	// 在这里关闭startedChan，通知messagePump此goroutine已经完成初始化
 	close(startedChan)
 
 	for {
 		if subChannel == nil || !client.IsReadyForMessages() {
 			// the client is not ready to receive messages...
+			// 客户端还没准备好接收数据
 			memoryMsgChan = nil
 			backendMsgChan = nil
 			flusherChan = nil
 			// force flush
+			// 强制刷新一次，将client中Inflight的消息发出去
 			client.writeLock.Lock()
-			err = client.Flush()
+			err = client.Flush() //
 			client.writeLock.Unlock()
 			if err != nil {
 				goto exit
 			}
 			flushed = true
-		} else if flushed {
+		} else if flushed { // 最终的数据已经flush完毕，不需要通过flusherChan推送消息了
 			// last iteration we flushed...
 			// do not select on the flusher ticker channel
+			// 将memoryMsgChan, backendMsgChan设置为我们订阅的channel所属的memoryMsgChan和backend
 			memoryMsgChan = subChannel.memoryMsgChan
 			backendMsgChan = subChannel.backend.ReadChan()
 			flusherChan = nil
 		} else {
 			// we're buffered (if there isn't any more data we should flush)...
 			// select on the flusher ticker channel, too
+			// buffer中有数据了，设置flusherChan， 保证在OutputBufferTimeout之后可以将消息发送出去
 			memoryMsgChan = subChannel.memoryMsgChan
 			backendMsgChan = subChannel.backend.ReadChan()
-			flusherChan = outputBufferTicker.C
+			flusherChan = outputBufferTicker.C // 定时往客户端flush
 		}
 
 		select {
+		// OutputBufferTimeout时间到，刷新缓冲区，将消息发送出去
 		case <-flusherChan:
 			// if this case wins, we're either starved
 			// or we won the race between other channels...
@@ -281,14 +288,23 @@ func (p *protocolV2) messagePump(client *clientV2, startedChan chan bool) {
 				goto exit
 			}
 			flushed = true
-		case <-client.ReadyStateChan:
+		case <-client.ReadyStateChan: // 客户端状态改变，重新判断客户端接收状态
 		case subChannel = <-subEventChan:
 			// you can't SUB anymore
+			// 订阅channel(EXEC(SUB))和更新RDY值时（EXEC(RDY)）时
+			// 会往subEventChan和client.ReadyStateChan中发送消息。
+			// messagePump如果接收从这两个golang channel中接收到消息，
+			// 则不可以再订阅nsq channel
 			subEventChan = nil
 		case identifyData := <-identifyEventChan:
 			// you can't IDENTIFY anymore
+			// 同样的，首次连接时执行EXEC(IDENTIRY)
+			// 会将客户端的配置通知到identifyEventChan。
+			// messagePump接收到后，根据客户端的配置调整心跳频率等。
+			// 之后再发送IDENTIFY，messagePump接收不到
 			identifyEventChan = nil
 
+			// 如下，根据客户端配置，调整不同的参数
 			outputBufferTicker.Stop()
 			if identifyData.OutputBufferTimeout > 0 {
 				outputBufferTicker = time.NewTicker(identifyData.OutputBufferTimeout)
@@ -307,11 +323,14 @@ func (p *protocolV2) messagePump(client *clientV2, startedChan chan bool) {
 
 			msgTimeout = identifyData.MsgTimeout
 		case <-heartbeatChan:
+			// 每隔HeartbeatInterval发送一次心跳包
 			err = p.Send(client, frameTypeResponse, heartbeatBytes)
 			if err != nil {
 				goto exit
 			}
 		case b := <-backendMsgChan:
+			// 如果backend中有数据，channel会将backend的消息从文件中读出，
+			// 发送到golang channel，推送至客户端
 			if sampleRate > 0 && rand.Int31n(100) > sampleRate {
 				continue
 			}
@@ -321,16 +340,23 @@ func (p *protocolV2) messagePump(client *clientV2, startedChan chan bool) {
 				p.nsqd.logf(LOG_ERROR, "failed to decode message - %s", err)
 				continue
 			}
+			// 每投递一次消息，则记录一次，超过一定次数就丢弃
 			msg.Attempts++
 
+			// 将消息移到InFlight队列，同时记录该消息在InFlight中的超时时间
 			subChannel.StartInFlightTimeout(msg, client.ID, msgTimeout)
+			// 增加客户端的InFlightCount和MessageCount
 			client.SendingMessage()
+			// 将消息写入buffer中
 			err = p.SendMessage(client, msg)
 			if err != nil {
 				goto exit
 			}
+			// 由于buffer中有数据了，将flushed设置为false，可以打开flusherChan
+			// 以便触发client.Flush()将消息发出去
 			flushed = false
 		case msg := <-memoryMsgChan:
+			// 获取memoryMsgChan中的消息与获取backendMsgChan中的基本一致
 			if sampleRate > 0 && rand.Int31n(100) > sampleRate {
 				continue
 			}
@@ -344,6 +370,7 @@ func (p *protocolV2) messagePump(client *clientV2, startedChan chan bool) {
 			}
 			flushed = false
 		case <-client.ExitChan:
+			// 接收到exit消息 则退出for
 			goto exit
 		}
 	}
